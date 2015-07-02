@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 '''Elipse Plant Manager - EPM Dataset Analysis Plugin - Plugin sample
 
-Copyright (C) 2007-2015 Elipse Software. All rights reserverd.
+Copyright (C) 2015 Elipse Software.
+Distributed under the MIT License.
+(See accompanying file LICENSE.txt or copy at http://opensource.org/licenses/MIT)
 '''
 
 # EPM Plugin modules
