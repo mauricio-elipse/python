@@ -1,0 +1,5 @@
+import sys
+sys.path.append(r'E:\Gitcode\python\Howtos')
+import windPlots as wp
+wp.windDirectionPieChart(WI_WindDirection)
+wp.polarScatterWindDirection(WI_WindDirection, WI_WindSpeed)
