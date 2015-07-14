@@ -88,7 +88,7 @@ def residualsSP(par, x, y):
     return powerFit(par, x) - y
 
 
-def readFromCsv(fileName=r'c:\Temp\refdata.csv', delimiter=';'):
+def readFromCsv(fileName=r'refdata.csv', delimiter=';'):
     """ Reads raw data from a CSV file and returns two numpy arrays.
     >>> speedRaw, powerRaw = readFromCsv(fileName=r'c:\Temp\refdata.csv', delimiter=';')
     >>> plt.scatter(speedRaw, powerRaw, c='b')
