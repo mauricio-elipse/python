@@ -18,27 +18,27 @@ A curva de referência é obtida a partir de dados em um arquivo .CSV, enquanto a 
 As funções foram implementadas para fins didáticos, exemplificando  passo a passo este caso prático. A função showResults apresenta os resultados ao final.
 ![windDirectionPieChart](https://github.com/mauricio-elipse/python/tree/master/Howtos/figs/aerogeneratorSpeedPower.png)
 A sequência de execução sugerida é a seguinte:
-import AerogeneratorSample as aero
-minSpeed = 4.0
-nominalPower = 3000.0
-speed, power = aero.removeOutliers(WindSpeedAvg, PowerAvg, minSpeed, nominalPower) # WindSpeedAvg e PowerAvg são as medidas de campo
-plt.scatter(speed, power, c='b')
-plt.show()
-speedAvg, powerAvg = aero.windPowerAverage(speed, power)
-plt.scatter(speed, power, c='b')
-plt.scatter(speedAvg, powerAvg, c='r', alpha=0.5)
-plt.show()
-speedEst, powerEst = aero.bestFitSpeedPower(speedAvg, powerAvg)
-plt.scatter(speedAvg, powerAvg, c='r')
-plt.plot(speedEst, powerEst, 'g', linewidth=3)
-plt.show()
-speedRaw, powerRaw = aero.readFromCsv(fileName='refdata.csv', delimiter=';')  # O arquivo .csv está em: misc/refdata.csv
-speedRef, powerRef = aero.genRefCurve(speedRaw, powerRaw, binSpeed = 0.5)
-plt.scatter(speedRaw, powerRaw, c='b')
-plt.scatter(speedRef, powerRef, c='r', alpha=0.5)
-plt.show()
-lost = aero.energyLost(powerRef, powerEst, binSpeed = 0.5)
-refData = (speedRef, powerRef)
-stData = (speedEst, powerEst)
-xpData = (speed, power)
-aero.showResults(refData, estData, expData, lost)
+<p>import AerogeneratorSample as aero</p>
+<p>minSpeed = 4.0</p>
+<p>nominalPower = 3000.0</p>
+<p>speed, power = aero.removeOutliers(WindSpeedAvg, PowerAvg, minSpeed, nominalPower) # WindSpeedAvg e PowerAvg são as medidas de campo</p>
+<p>plt.scatter(speed, power, c='b')</p>
+<p>plt.show()</p>
+<p>speedAvg, powerAvg = aero.windPowerAverage(speed, power)</p>
+<p>plt.scatter(speed, power, c='b')</p>
+<p>plt.scatter(speedAvg, powerAvg, c='r', alpha=0.5)</p>
+<p>plt.show()</p>
+<p>speedEst, powerEst = aero.bestFitSpeedPower(speedAvg, powerAvg)</p>
+<p>plt.scatter(speedAvg, powerAvg, c='r')</p>
+<p>plt.plot(speedEst, powerEst, 'g', linewidth=3)</p>
+<p>plt.show()</p>
+<p>speedRaw, powerRaw = aero.readFromCsv(fileName='refdata.csv', delimiter=';')  # O arquivo .csv está em: misc/refdata.csv</p>
+<p>speedRef, powerRef = aero.genRefCurve(speedRaw, powerRaw, binSpeed = 0.5)</p>
+<p>plt.scatter(speedRaw, powerRaw, c='b')</p>
+<p>plt.scatter(speedRef, powerRef, c='r', alpha=0.5)</p>
+<p>plt.show()</p>
+<p>lost = aero.energyLost(powerRef, powerEst, binSpeed = 0.5)</p>
+<p>refData = (speedRef, powerRef)</p>
+<p>stData = (speedEst, powerEst)</p>
+<p>xpData = (speed, power)</p>
+<p>aero.showResults(refData, estData, expData, lost)</p>
