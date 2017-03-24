@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-'''Elipse Plant Manager - EPM Dataset Analysis Plugin - Plugin sample
+'''Elipse Plant Manager - EPM Dataset Analysis Plugin - Plugin example
 Copyright (C) 2016 Elipse Software.
 Distributed under the MIT License.
 (See accompanying file LICENSE.txt or copy at http://opensource.org/licenses/MIT)
