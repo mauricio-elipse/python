@@ -12,7 +12,9 @@ Para migrar códigos de Plugins Python do EPM Studio versão 2.x para a 3.x, as 
 ``import EpmDatasetPlugins as ds
 import ScriptRunner as sr
 ``
+
 por
+
 ``
 import Plugins as ep
 ``
@@ -20,7 +22,9 @@ import Plugins as ep
 ``
 @ds.epm_dataset_method_plugin
 ``
+
 por
+
 ``
 @ep.DatasetFunctionPlugin
 ``
@@ -28,7 +32,9 @@ por
 ``
 sr.msgBox
 ``
+
 por
+
 ``
 ep.showMsgBox
 ``
@@ -36,7 +42,9 @@ ep.showMsgBox
 ``
 ds.EpmDatasetAnalysisPens
 ``
+
 por
+
 ``
 ep.EpmDatasetPens
 ``
@@ -44,7 +52,9 @@ ep.EpmDatasetPens
 ``
 sr.plot
 ``
+
 por
+
 ``
 ep.plotValues
 ``
@@ -52,7 +62,9 @@ ep.plotValues
 ``
 .values
 ``
+
 por
+
 ``
 .Values
 ``
@@ -60,7 +72,9 @@ por
 ``
 .name
 ``
+
 por
+
 ``
 .Name
 ``
