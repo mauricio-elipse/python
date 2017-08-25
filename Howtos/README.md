@@ -23,12 +23,14 @@ A sequência de execução sugerida está no arquivo: ![Script aerogenerator: aeroge
 # Exemplos de implementações de filtros de ruídos de medida - uso por linha de comando.
 
 Comandos a serem executados no console Python do EPM Dataset Analysis aplicados uma variável de processo de nome *cpu*:
->>> import noiseFilteringExamples as nfe
->>> y1 = nfe.filter1st(cpu, 1, 1)
->>> plotValues('y1', y1)
->>> y2 = nfe.filtSignal(cpu)
->>> plotValues('y2', y2)
->>> y3 = nfe.filtMeanEpm(cpu, 12 )
->>> plotValues('y3', y3)
+
+> import noiseFilteringExamples as nfe
+> y1 = nfe.filter1st(cpu, 1, 1)
+> plotValues('y1', y1)
+> y2 = nfe.filtSignal(cpu)
+> plotValues('y2', y2)
+> y3 = nfe.filtMeanEpm(cpu, 12 )
+> plotValues('y3', y3)
+
 Noise Filtering Examples (EPM Datset Analysis)
 ![Noise Filtering Examples](https://github.com/mauricio-elipse/python/tree/master/Howtos/figs/noiseFilteringExample.PNG)
