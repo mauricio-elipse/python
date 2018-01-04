@@ -397,14 +397,10 @@ def printOutput4Debug(msg):
 #### ***** <MAIN para testes locais> *****
 
 def mainDailyACPowerCost():
-    # connection = epm.testepmconnection.TestEpmConnection('http://epm_processor_machine:44333',
-    #                                                      'http://epm_processor_machine:44332',
-    #                                                      'epm_user',
-    #                                                      'epm_user_password')
-    connection = epm.testepmconnection.TestEpmConnection('http://dili:44333',
-                                                         'http://dili:44332',
-                                                         'mauricio',
-                                                         'mauricio1235')
+    connection = epm.testepmconnection.TestEpmConnection('http://epm_processor_machine:44333',
+                                                         'http://epm_processor_machine:44332',
+                                                         'epm_user',
+                                                         'epm_user_password')
     tagACCompressor = connection.getBasicVariable('1:ADM_ACCompr')
     tagACPowerCost = connection.getBasicVariable('1:ADM_ACCompDailyCost')
     eventTime = datetime.datetime(2018, 1, 3, 12, tzinfo=pytz.UTC)
