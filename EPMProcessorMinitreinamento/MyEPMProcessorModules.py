@@ -10,7 +10,7 @@ __author__ = u"Maurício"
 __copyright__ = "Copyright 2017, Elipse Software"
 __credits__ = [u"Renan", u"Lucas"]
 __license__ = "MIT"
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __maintainer__ = u"Maurício"
 __email__ = "mauricio@elipse.com.br"
 __status__ = "Production"
@@ -27,12 +27,11 @@ import numpy as np
 from sklearn import linear_model
 import matplotlib.pyplot as plt
 plt.style.use('ggplot')
-#plt.ioff()
 from selenium import webdriver
 
 # ****** <Import dos Módulos do EPM Processor> ******
 import epmprocessor as epr
-import epmprocessor.epm as epm
+import epmwebapi as epm
 # ****** </Import dos Módulos do EPM Processor> ******
 
 
@@ -157,7 +156,7 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
     isOrderdDict = False
     if type(tagACCompressor) == OrderedDict:
         isOrderdDict = True
-    if not isOrderdDict and type(tagACCompressor) != epr.epm.epmdataobject.EpmDataObject:
+    if not isOrderdDict and type(tagACCompressor) != epm.epmdataobject.EpmDataObject:
         raise MyExceptionClass(u'oops! Erro no tipo de tag informado - não é lista nem tag!!!')
     tz = pytz.timezone(timeZone)
     timeEventUTC = session.timeEvent.replace(tzinfo=pytz.UTC)
@@ -198,10 +197,7 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
     valSim = 0.0
     try:
         # Simula no site da concessionária
-        if _SERVERMACHINE:
-            phantomPath = Path(r'C:\temp\mspFiles\phantomjs\bin\phantomjs.exe')
-        else:
-            phantomPath = Path(r'C:\Programas\phantomjs\bin\phantomjs.exe')
+        phantomPath = Path(r'C:\Programas\phantomjs\bin\phantomjs.exe')
         if phantomPath.is_file():
             dr = webdriver.PhantomJS(executable_path=phantomPath._str)
         else:
@@ -403,7 +399,7 @@ def mainDailyACPowerCost():
                                                          'epm_user_password')
     tagACCompressor = connection.getBasicVariable('1:ADM_ACCompr')
     tagACPowerCost = connection.getBasicVariable('1:ADM_ACCompDailyCost')
-    eventTime = datetime.datetime(2018, 1, 3, 12, tzinfo=pytz.UTC)
+    eventTime = datetime.datetime(2018, 1, 5, 12, tzinfo=pytz.UTC)
     kWhFactor=2.1
     timeZone = 'Brazil/East'
     notUsed = datetime.timedelta(minutes=60*24)
