@@ -445,15 +445,11 @@ def mainmspRobustLinearRegression(connections):
 
 if __name__ == '__main__':
     print('Iniciando a depuração...')
-    # connection = epm.EpmConnection('http://epm_processor_machine:44333',
-    #                                'http://epm_processor_machine:44332',
-    #                                'epm_user',
-    #                                'epm_user_password')
+    connection = epm.EpmConnection('http://epm_processor_machine:44333',
+                                   'http://epm_processor_machine:44332',
+                                   'epm_user',
+                                   'epm_user_password')
     # connections = {'epm_processor_machine': connection}
-    connection = epm.EpmConnection('http://dili:44333',
-                                   'http://dili:44332',
-                                   'mauricio',
-                                   'mauricio1235')
     connections = {'dili': connection}
 
     # Descomentar a linha de interesse para Debug
