@@ -449,8 +449,7 @@ if __name__ == '__main__':
                                    'http://epm_processor_machine:44332',
                                    'epm_user',
                                    'epm_user_password')
-    # connections = {'epm_processor_machine': connection}
-    connections = {'dili': connection}
+    connections = {'epm_processor_machine': connection}
 
     # Descomentar a linha de interesse para Debug
     #sys.exit(int(not mainDailyACPowerCost(connections)) or 0)
