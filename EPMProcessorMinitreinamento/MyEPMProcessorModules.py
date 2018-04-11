@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Elipse Plant Manager - EPM Processor - Basic functions
 Copyright (C) 2017 Elipse Software.
 Distributed under the MIT License.
@@ -10,7 +10,7 @@ __author__ = u"Maurício"
 __copyright__ = "Copyright 2017, Elipse Software"
 __credits__ = [u"Renan", u"Lucas"]
 __license__ = "MIT"
-__version__ = "0.0.2"
+__version__ = "0.0.4"
 __maintainer__ = u"Maurício"
 __email__ = "mauricio@elipse.com.br"
 __status__ = "Production"
@@ -27,6 +27,7 @@ import numpy as np
 from sklearn import linear_model
 import matplotlib.pyplot as plt
 plt.style.use('ggplot')
+#plt.ioff()
 from selenium import webdriver
 
 # ****** <Import dos Módulos do EPM Processor> ******
@@ -38,6 +39,7 @@ import epmwebapi as epm
 #### ***** <Configurações globais> *****
 _SERVERMACHINE = False  # Indica se é para rodar no servidor (=True)
 _PRINTDEBUG = True  # Indica se é para imprimir outputs em modo de depuração
+_USEREPOSITORY = True # indica se é para usar o repositório do EPM Webserver ao invés de arquivos no disco
 #### ***** </Configurações globais> *****
 
 
@@ -156,7 +158,7 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
     isOrderdDict = False
     if type(tagACCompressor) == OrderedDict:
         isOrderdDict = True
-    if not isOrderdDict and type(tagACCompressor) != epm.epmdataobject.EpmDataObject:
+    if not isOrderdDict and not isinstance(tagACCompressor, epm.epmdataobject.EpmDataObject):
         raise MyExceptionClass(u'oops! Erro no tipo de tag informado - não é lista nem tag!!!')
     tz = pytz.timezone(timeZone)
     timeEventUTC = session.timeEvent.replace(tzinfo=pytz.UTC)
@@ -210,7 +212,7 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
         r = dr.find_element_by_id('result')
         rVal = r.find_elements_by_tag_name('b')
         pos = rVal[0].text.find('R$ ')
-        valSim =  float(rVal[0].text[pos+3:].replace(',', '.'))
+        valSim = float(rVal[0].text[pos+3:].replace(',', '.'))
     except:
         raise MyExceptionClass(u'oops! Erro na simulação da concessionária!')
 
@@ -385,6 +387,9 @@ def printOutput4Debug(msg):
     global _PRINTDEBUG
     print(msg) if _PRINTDEBUG else None
 
+def getFirstFromODict(od):
+    return next(iter(od.values())) if isinstance(od, OrderedDict) or isinstance(od, dict) else None
+
 #### ***** </Funções/Classes utilizadas pelos módulos> *****
 
 ########################################################################################################################
@@ -392,46 +397,68 @@ def printOutput4Debug(msg):
 
 #### ***** <MAIN para testes locais> *****
 
-def mainDailyACPowerCost():
-    connection = epm.testepmconnection.TestEpmConnection('http://epm_processor_machine:44333',
-                                                         'http://epm_processor_machine:44332',
-                                                         'epm_user',
-                                                         'epm_user_password')
-    tagACCompressor = connection.getBasicVariable('1:ADM_ACCompr')
-    tagACPowerCost = connection.getBasicVariable('1:ADM_ACCompDailyCost')
-    eventTime = datetime.datetime(2018, 1, 5, 12, tzinfo=pytz.UTC)
-    kWhFactor=2.1
-    timeZone = 'Brazil/East'
-    notUsed = datetime.timedelta(minutes=60*24)
+def mainDailyACPowerCost(connections):
+    # *** Definindo o objeto SESSION ***
+    eventTime = datetime.datetime(2017, 10, 24, 12, tzinfo=pytz.UTC)
+    notUsed = datetime.timedelta(minutes=60 * 24)
     parametersMap = {}
     userCache = {}
-    lastExecutedInfo = None
-    session = epr.ScopeSession(eventTime, notUsed, notUsed, parametersMap, userCache, lastExecutedInfo)
+    lastExecutedInfo = None  # epr.ExecutionInfo(dt.datetime.now, ScopeResult(True))
+    scopeResult = epr.ScopeContext.Test
+    session = epr.ScopeSession(timeEvent=eventTime, range=notUsed, processInterval=notUsed,
+                               parametersMap=parametersMap, userCache=userCache, lastExecutedInfo=lastExecutedInfo,
+                               connectionsMap=connections, scopeContext=scopeResult)
+
+    # *** Definindo demais parâmetros ***
+    connection = getFirstFromODict(connections)
+    tagACCompressor = getFirstFromODict(connection.getBasicVariables(['ADM_ACCompr']))
+    tagACPowerCost = getFirstFromODict(connection.getBasicVariables(['ADM_ACCompDailyCost']))
+    kWhFactor = 2.1
+    timeZone = 'Brazil/East'
+
+    # *** Chamando o método para testar ***
     r = mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor, timeZone)
-    print('Final da: mainDailyACPowerCost()')
     return r.succeeded
 
-
-def mainmspRobustLinearRegression():
+def mainmspRobustLinearRegression(connections):
+    # *** Definindo o objeto SESSION ***
     eventTime = datetime.datetime(2018, 1, 2, 2, tzinfo=pytz.UTC)
-    connection = epm.testepmconnection.TestEpmConnection('http://epm_processor_machine:44333',
-                                                         'http://epm_processor_machine:44332',
-                                                         'epm_user',
-                                                         'epm_user_password')
-    bv = connection.getBasicVariable('1:EPMDev_Temperature')
-    bvPred = connection.getBasicVariable('1:EPMDev_Temperature_Pred')
+    range = datetime.timedelta(minutes=30)
+    processInterval = datetime.timedelta(minutes=1)
     parametersMap = {}
     userCache = {}
-    lastExecutedInfo = None
-    session = epr.ScopeSession(eventTime, datetime.timedelta(minutes=30), datetime.timedelta(minutes=1), parametersMap,
-                               userCache, lastExecutedInfo)
+    lastExecutedInfo = None  # epr.ExecutionInfo(dt.datetime.now, ScopeResult(True))
+    scopeResult = epr.ScopeContext.Test
+    session = epr.ScopeSession(timeEvent=eventTime, range=range, processInterval=processInterval,
+                               parametersMap=parametersMap, userCache=userCache, lastExecutedInfo=lastExecutedInfo,
+                               connectionsMap=connections, scopeContext=scopeResult)
+
+    # *** Definindo demais parâmetros ***
+    connection = getFirstFromODict(connections)
+    bv = getFirstFromODict(connection.getBasicVariables(['EPMDev_Temperature']))
+    bvPred = getFirstFromODict(connection.getBasicVariables(['EPMDev_Temperature_Pred']))
+
+    # *** Chamando o método para testar ***
     r = mspRobustLinearRegression(session, bv, bvPred)
+    return r.succeeded
 
 
 if __name__ == '__main__':
     print('Iniciando a depuração...')
-    sys.exit(int(mainDailyACPowerCost() or 0))
-    #sys.exit(int(mainmspRobustLinearRegression() or 0))
+    # connection = epm.EpmConnection('http://epm_processor_machine:44333',
+    #                                'http://epm_processor_machine:44332',
+    #                                'epm_user',
+    #                                'epm_user_password')
+    # connections = {'epm_processor_machine': connection}
+    connection = epm.EpmConnection('http://dili:44333',
+                                   'http://dili:44332',
+                                   'mauricio',
+                                   'mauricio1235')
+    connections = {'dili': connection}
+
+    # Descomentar a linha de interesse para Debug
+    #sys.exit(int(not mainDailyACPowerCost(connections)) or 0)
+    sys.exit(int(not mainmspRobustLinearRegression(connections)) or 0)
 
 
 #### ***** </MAIN para testes locais> *****
