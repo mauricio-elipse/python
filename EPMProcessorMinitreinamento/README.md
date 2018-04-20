@@ -24,11 +24,13 @@ Exemplo de como documentar o código para geração automática de documentação em h
 ## Vídeos úteis
 
 ###Script Python para execução automática - 1/3
+
 Desenvolvimento de scripts Python para execução automática em cálculos de indicadores e previsões. 1/3 - Exemplo prático e algumas dicas para criação de um projeto Python utilizando o PyCharm.
 
 https://www.youtube.com/watch?v=Fpn_NvgChGw
 
 ### Script Python para execução automática - 2/3.
+
 Desenvolvimento de scripts Python para execução automática em cálculos de indicadores e previsões. 2/3 - Exemplo prático de uso da API Python para leitura de dados e escrita de resultados em um EPM Server (base de dados para séries temporais) e depuração de código Python utilizando o PyCharm.
 
 https://www.youtube.com/watch?v=XmGYYRxPzz0
