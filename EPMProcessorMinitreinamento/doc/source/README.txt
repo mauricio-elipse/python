@@ -12,5 +12,5 @@
 - Sphinx quick-start: http://www.sphinx-doc.org/pt_BR/stable/invocation.html
 
 - Para rodar com o Sphinx do EnvPy3
-cd C:\Anaconda2\envs\EnvPy3\Scripts    (No caso de utilizar virtualenv para o Python 3)
-sphinx-build -b html C:\Users\mauricio\Projects\EPMProcessorMinitreinamento\doc\source C:\Users\mauricio\Projects\EPMProcessorMinitreinamento\doc\build
+1. >> cd C:\Anaconda3\Scripts
+2. >> sphinx-build -b html F:\GDrive\Projects\EPMProcessorMinitreinamento\doc\source F:\GDrive\Projects\EPMProcessorMinitreinamento\doc\build

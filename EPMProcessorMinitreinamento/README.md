@@ -1,4 +1,4 @@
-Exemplo de uso da Web API Python 3.6 (beta version) do EPM Processor
+Exemplo de uso da Web API Python (beta version) do EPM Processor
 =======
 
 ## Exemplo 1 - função para o cálculo diário do custo da energia de um ar condicionado ligado.
@@ -11,13 +11,17 @@ Exemplo de como proceder com a leitura de dados históricos (base diária) do perí
 Exemplo que demonstra como proceder com uma consulta histórica interpolada do valor da temperatura de uma sala da última hora e utilizar estes dados para predizer o valor desta temperatura meia hora à frente utilizando um método de regressão linear robusta.
 
 
-## Exemplo 3 - documentação
+## Exemplo 3 - função para geração mensal de relatórios em PDF a partir de um template em HTML. Os relatórios são gerados
+por andar (objeto Floor), onde cada andar tem 4 salas e cada sala tem um ar-condicionado.
+
+
+## Exemplo 4 - documentação
 Exemplo de como documentar o código para geração automática de documentação em html utilizando o sphinx.
 
 
 ## Vídeos úteis
 
-### Script Python para execução automática - 1/3
+###Script Python para execução automática - 1/3
 Desenvolvimento de scripts Python para execução automática em cálculos de indicadores e previsões. 1/3 - Exemplo prático e algumas dicas para criação de um projeto Python utilizando o PyCharm.
 
 https://www.youtube.com/watch?v=Fpn_NvgChGw

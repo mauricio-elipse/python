@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import sys
-sys.path.insert(1, r'C:\Users\mauricio\Projects')
-sys.path.insert(1, r'C:\Users\mauricio\Projects\EPMProcessorMinitreinamento')
+sys.path.insert(1, r'F:\GDrive\Projects')
+sys.path.insert(1, r'F:\GDrive\Projects\EPMProcessorMinitreinamento')
 
 __all__ = ['MyEPMProcessorModules']
 

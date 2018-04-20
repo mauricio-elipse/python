@@ -7,10 +7,10 @@ Distributed under the MIT License.
 
 
 __author__ = u"Maurício"
-__copyright__ = "Copyright 2017, Elipse Software"
+__copyright__ = "Copyright 2018, Elipse Software"
 __credits__ = [u"Renan", u"Lucas"]
 __license__ = "MIT"
-__version__ = "0.0.4"
+__version__ = "0.0.7"
 __maintainer__ = u"Maurício"
 __email__ = "mauricio@elipse.com.br"
 __status__ = "Production"
@@ -18,10 +18,17 @@ __docformat__ = 'reStructuredText'
 
 
 import sys
+import os
 import datetime
 import pytz
+import re
 import json
+import io
+import mimetypes
+import base64
+import shutil
 from pathlib import Path
+import pdfkit
 from collections import OrderedDict
 import numpy as np
 from sklearn import linear_model
@@ -39,7 +46,8 @@ import epmwebapi as epm
 #### ***** <Configurações globais> *****
 _SERVERMACHINE = False  # Indica se é para rodar no servidor (=True)
 _PRINTDEBUG = True  # Indica se é para imprimir outputs em modo de depuração
-_USEREPOSITORY = True # indica se é para usar o repositório do EPM Webserver ao invés de arquivos no disco
+_USEREPOSITORY = True  # indica se é para usar o repositório do EPM Webserver ao invés de arquivos no disco
+_PHANTOMPATH = r'C:\Programas\phantomjs\bin\phantomjs.exe'  # local onde está instalado o phantomjs
 #### ***** </Configurações globais> *****
 
 
@@ -174,7 +182,7 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
         # Converte para horas
         duratinInHour = 0
         v = dataValueObj['Value'][0]
-        if not np.isnan(v) and v!= 0:
+        if not np.isnan(v) and v != 0:
             duratinInHour = v / 3600000
         return duratinInHour
 
@@ -199,7 +207,7 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
     valSim = 0.0
     try:
         # Simula no site da concessionária
-        phantomPath = Path(r'C:\Programas\phantomjs\bin\phantomjs.exe')
+        phantomPath = Path(_PHANTOMPATH)
         if phantomPath.is_file():
             dr = webdriver.PhantomJS(executable_path=phantomPath._str)
         else:
@@ -218,12 +226,20 @@ def mspDailyACPowerCost(session, tagACCompressor, tagACPowerCost, kWhFactor=2.1,
 
     try:
         if not isOrderdDict:
-            tagACPowerCost.write(v * valSim, iniTime, 0)
+            if session.scopeContext == epr.ScopeContext.Test:
+                print('Resultado: {valor} - {timestamp}'.format(valor=str(v * valSim),
+                                                                timestamp=iniTime.isoformat()))
+            else:  # Production ou Simulation
+                tagACPowerCost.write(v * valSim, iniTime, 0)
         else:
             vCost = vList * valSim
             i = 0
             for key, value in tagACPowerCost.items():
-                value.write(vCost[i], iniTime, 0)
+                if session.scopeContext == epr.ScopeContext.Test:
+                    print('Resultado: {valor} - {timestamp}'.format(valor=str(vCost[i]),
+                                                                    timestamp=iniTime.isoformat()))
+                else:  # Production ou Simulation
+                    value.write(vCost[i], iniTime, 0)
                 i += 1
 
         session.userCache['infos'] = json.dumps({"timeZone": timeZone, "kWhFactor":str (kWhFactor),
@@ -362,12 +378,311 @@ def mspRobustLinearRegression(session, tag, predTag):
     epmPredData['Timestamp'] = predTimestamp
     printOutput4Debug('Antes do W len(PredData): {}'.format(len(epmPredData['Value'])))
     try:
-        predTag.historyUpdate(epmPredData)
+        if session.scopeContext == epr.ScopeContext.Test:
+            print('Resultado: {valor} - {timestamp}'.format(valor=str(epmPredData['Value'][-1]),
+                                                            timestamp=epmPredData['Timestamp'][-1].isoformat()))
+        else:  # Production ou Simulation
+            predTag.historyUpdate(epmPredData)
     except:
         raise MyExceptionClass(u'oops! Erro na escrita dos dados preditos!')
     printOutput4Debug('Escrita ok!')
     session.userCache['infos'] = json.dumps({"processInterval": processIntervalSec, "nSamples":nSamples,
                                              "fitInfos":str(fitInfos)})
+    return epr.ScopeResult(True)
+
+
+@epr.applicationMethod('FloorPdfReport')
+def mspFloorPdfReport(session, floorObjs, floor, filesPath, fileName, timeZone):
+    """.. rubric:: FloorPdfReport
+
+        Função para validar:
+
+            * utilização de objetos do EPM como parâmetros (navegação na estrutura hierárquica de dados)
+            * geração automática de relatórios em PDF (estatísticas descritivas) a partir de um template de relatório em HTML
+            * Tratamento automático de Time Zone
+
+            Esta função gera relatórios mensais com informações sobre a temperatura e uso do ar condicionado para todas
+            as salas modeladas para um dado andar com automação. O relatório está no formato PDF e é disponibilizado em
+            um local da rede onde todos possam acessar (HD ou repositório do EPM Webserver). Cada relatório segue um
+            padrão de nomenclatura de arquivo indicando o andar ao qual pertence, o ano e mês de referência.
+            O conteúdo é uma tabela com informações estatísticas descritivas de cada uma das salas, seguido de um gráfico
+            do tipo Box-Plot das temperaturas das mesmas, um gráfico de barras indicando o tempo médio diário do
+            ar-condicionado ligado em cada uma das salas e, por fim, um gráfico com as temperaturas mínimas e máximas
+            de cada uma das salas.
+
+                        :param session: objeto *session* do EPM Processor
+                        :param floorObjs: informar qual o tipo de *Objeto do Elipse Data Model* deve ser utilizado.
+                               Este parâmetro sempre deverá ser do tipo **Floor** a não ser que a modelagem na automação
+                               seja alterada.
+                        :param floor: Informar um filtro para identificar o andar desejado. No caso da Elipse-RS, existem
+                               apenas 3 andares: *Floor10*, *Floor11* e *Floor12*
+                        :param filesPath: local para salvar o relatório gerado (disco|repositório).
+                        :param fileName: nome do arquivo HTML de template utilizado para gerar o relatório em PDF.
+                        :param timeZone: define o Time Zone onde se localiza o EPM Server. Por padrão: *'Brazil/East'*
+                        :type session: epmprocessor.ScopeSession
+                        :type floorObjs: OrderedDict com objetos Floor modelado pelo Elipse Data Model.
+                        :type floor: string
+                        :type filesPath: string
+                        :type fileName: string
+                        :type timeZone: string
+                        :returns: estado da execução (Sucesso=True | Falha=False)
+                        :rtype: epmprocessor.ScopeResult
+                        :raises: MyExceptionClass
+
+
+                        .. rubric:: APPLICATION
+
+                        Para testar uma *Application*, é preciso informar um *session/Time Event* qualquer (em UTC),
+                        que ela irá gerar um relatório para o mês anterior ao do evento.
+                        Esta função não utiliza os parâmetros: *Range* e *Processes Interval*.
+
+                        .. rubric:: PRODUCTION
+
+                        Esta função não utiliza os parâmetros: *Range* e *Processes Interval*. O relatóri em PDF é
+                        gerado para o mês anterior ao do evento.
+
+
+                        .. epigraph:: **EPM Event**
+
+                            Evento deve ser de mensal, podendo definir qualquer dia, uma vez que ele serve apenas como
+                            referência para gerar o relatório do mês anterior, supostamente com todos os dados
+                            necessários já disponíveis (mês completo).
+
+                        .. epigraph:: **Production Rules**
+
+                            Recomenda-se selecionar as opções *Enable error configuration* e *Abort retries on new event*,
+                            com a opção de 3 retentativas em caso de falha, aguardando 1 minuto entre elas.
+
+                        .. epigraph:: **Range**
+
+                            Parâmetro ignorado pela função, pode ser informado qualquer valor que não será utilizado.
+
+                        .. epigraph:: **Processes Interval**
+
+                            Parâmetro ignorado pela função, pode ser informado qualquer valor que não será utilizado.
+
+
+                        .. note::
+                            É necessário que o arquivo de template esteja disponível e siga as regras de nomenclatura,
+                            pois o nome do arquivo gerado utiliza o do template como referência.
+
+                            Para usar este método, é necessário que os dados sigam a seguinte modelagem feita através
+                            do **Elipse Data Model**, conforme exemplificado na imagem a seguir:
+
+                        .. image:: ElipseDataModel.PNG
+                           :alt: Elipse Data Model
+                           :height: 300pt
+                           :align: center
+
+                        .. warning::
+                            O parâmetro *filesPath* deve corresponder a um local com permissões de escrita para que o
+                            relatório possa ser salvo no caso de dispoição em disco. Na utilização do repositório, basta
+                            informar um local válido.
+
+                            Não é necessário informar **Range** e **Process Interval**.
+
+
+                        .. todo::
+                            Validar outras consistências das entradas (=s, size=s, etc.).
+
+                            Tratar eventuais problemas com a utilização do arquivo de template (não existir, etc.).
+
+                            Tratar eventuais problemas com a escrita dos relatórios PDF no local informado.
+
+                        .. Comment
+                           Even more comments
+
+
+                        .. Três linhas em branco!
+
+                        |
+                        |
+                        |
+                        """
+
+    roomsObj = list(floorObjs.values())[0]
+    tmpRE = re.search(r'\[Elipse\-\w{2}\]', roomsObj.path)
+    if tmpRE:
+        elipseSite = tmpRE.group()
+    else:
+        raise MyExceptionClass(u'oops! Erro no nome do site da Elipse!')
+    roomPrettyName = {('[Elipse-RS]', 'Floor10', 'Room1'): 'ADM',
+                      ('[Elipse-RS]', 'Floor10', 'Room2'): 'TI',
+                      ('[Elipse-RS]', 'Floor10', 'Room3'): 'Meeting10th',
+                      ('[Elipse-RS]', 'Floor10', 'Room4'): 'EPM',
+                      ('[Elipse-RS]', 'Floor11', 'Room1'): 'Power',
+                      ('[Elipse-RS]', 'Floor11', 'Room2'): 'Servers',
+                      ('[Elipse-RS]', 'Floor11', 'Room3'): 'Meeting11th',
+                      ('[Elipse-RS]', 'Floor11', 'Room4'): 'E3',
+                      ('[Elipse-RS]', 'Floor12', 'Room1'): 'Auditorium',
+                      ('[Elipse-RS]', 'Floor12', 'Room2'): 'Training',
+                      ('[Elipse-RS]', 'Floor12', 'Room3'): 'Meeting12th',
+                      ('[Elipse-RS]', 'Floor12', 'Room4'): 'Dev-12'}
+    rooms = ['']*4
+    mapBVList = OrderedDict({'$Temp': [0]*4, '$VentON': [0]*4, '$Compr': [0]*4})
+    itTemp, itAComp, itACVent = (0, 0, 0)
+
+    def roomPath2IdxOrder(strPath):
+        return int(strPath[strPath.find('Room')+4:strPath.find('Room')+5])
+    # Navegando na estrutura de dados do andar para montar o mapBVList
+    for roomsList in roomsObj.enumObjects().values():
+        print('*SALA: ' + roomsList.path)
+        idxOrder = roomPath2IdxOrder(roomsList.path) - 1
+        rooms[idxOrder] = roomPrettyName[elipseSite, floor, roomsList.name]
+        for room in roomsList.enumObjects().values():
+            printOutput4Debug('------>' + room.path)
+            if room.type == 'Temperature':
+                for itemProperty in room.enumProperties().values():
+                    if exactMatch(itemProperty.name, 'Measurement'):
+                        printOutput4Debug(itemProperty.name)
+                        mapBVList['$Temp'][idxOrder] = itemProperty
+            elif room.type == 'AirConditioner':
+                for itemProperty in room.enumProperties().values():
+                    if exactMatch(itemProperty.name, 'Compressor'):
+                        printOutput4Debug(itemProperty.name)
+                        mapBVList['$Compr'][idxOrder] = itemProperty
+                    elif exactMatch(itemProperty.name, 'Ventilation'):
+                        printOutput4Debug(itemProperty.name)
+                        mapBVList['$VentON'][idxOrder] = itemProperty
+
+    # Inicialização do dataMap
+    dataMap = {'$s1Tmin': -1, '$s1Tmax': -1, '$s1Tavg': -1, '$s1Tstd': -1, '$s1VentON': -1, '$s1ComprON': -1,
+               '$s1Tcv': -1,
+               '$s2Tmin': -1, '$s2Tmax': -1, '$s2Tavg': -1, '$s2Tstd': -1, '$s2VentON': -1, '$s2ComprON': -1,
+               '$s2Tcv': -1,
+               '$s3Tmin': -1, '$s3Tmax': -1, '$s3Tavg': -1, '$s3Tstd': -1, '$s3VentON': -1, '$s3ComprON': -1,
+               '$s3Tcv': -1,
+               '$s4Tmin': -1, '$s4Tmax': -1, '$s4Tavg': -1, '$s4Tstd': -1, '$s4VentON': -1, '$s4ComprON': -1,
+               '$s4Tcv': -1}
+    tz = pytz.timezone(timeZone)
+    timeEventUTC = session.timeEvent.replace(tzinfo=pytz.UTC)
+    timeEventLoc = timeEventUTC.astimezone(tz)
+    timeDifference = timeEventLoc.utcoffset().total_seconds()
+    _localTime = datetime.timedelta(hours=abs(timeDifference / 3600))
+    eventDate = session.timeEvent.date().replace(day=1)
+    reportDate = (eventDate - datetime.timedelta(days=1)).replace(day=1)
+    iniTime = datetime.datetime.combine(reportDate, datetime.time(0)) + _localTime
+    endTime = datetime.datetime.combine(eventDate, datetime.time(0)) + _localTime
+    processInterval = datetime.timedelta(days=1)
+    try:
+        queryPeriod = epm.QueryPeriod(iniTime, endTime)
+        aggTimeAvgDetails = epm.AggregateDetails(processInterval, epm.AggregateType.TimeAverage)
+        aggDurationNonZeroDetails = epm.AggregateDetails(processInterval, epm.AggregateType.DurationInStateNonZero)
+        dataValueTemp =[]
+        dataValueVent =[]
+        dataValueComp =[]
+        for key, tagList in mapBVList.items():
+            if key == '$Temp':
+                for tag in tagList:
+                    if type(tag) != type(None):
+                        dataValueTemp.append(tag.historyReadAggregate(aggTimeAvgDetails, queryPeriod)['Value'])
+                    else:
+                        dataValueTemp.append(np.array([0]))
+            elif key == '$VentON':
+                for tag in tagList:
+                     if type(tag) != type(None):
+                         dataValueVent.append(tag.historyReadAggregate(aggDurationNonZeroDetails, queryPeriod)['Value']/60000)
+                     else:
+                        dataValueVent.append(np.array([0]))
+            else:
+                for tag in tagList:
+                    if type(tag) != type(None):
+                        dataValueComp.append(tag.historyReadAggregate(aggDurationNonZeroDetails, queryPeriod)['Value']/60000)
+                    else:
+                        dataValueComp.append(np.array([0]))
+    except:
+        raise MyExceptionClass(u'oops! Erro nas consultas agregadas!')
+
+    def checkArray(v, func):
+        return func(v) if v.size > 0 else None
+
+    ratio = lambda a, b: None if not b or a == None else a / b
+
+    dataMap['$s1Tmin'] = checkArray(dataValueTemp[0], np.min)
+    dataMap['$s1Tmax'] = checkArray(dataValueTemp[0], np.max)
+    dataMap['$s1Tavg'] = checkArray(dataValueTemp[0], np.mean)
+    dataMap['$s1Tstd'] = checkArray(dataValueTemp[0], np.std)
+    dataMap['$s1VentON'] = checkArray(dataValueVent[0], np.mean)
+    dataMap['$s1ComprON'] = checkArray(dataValueComp[0], np.mean)
+    dataMap['$s1Tcv'] = ratio(dataMap['$s1ComprON'], dataMap['$s1VentON'])
+    dataMap['$s2Tmin'] = checkArray(dataValueTemp[1], np.min)
+    dataMap['$s2Tmax'] = checkArray(dataValueTemp[1], np.max)
+    dataMap['$s2Tavg'] = checkArray(dataValueTemp[1], np.mean)
+    dataMap['$s2Tstd'] = checkArray(dataValueTemp[1], np.std)
+    dataMap['$s2VentON'] = checkArray(dataValueVent[1], np.mean)
+    dataMap['$s2ComprON'] = checkArray(dataValueComp[1], np.mean)
+    dataMap['$s2Tcv'] = ratio(dataMap['$s2ComprON'], dataMap['$s2VentON'])
+    dataMap['$s3Tmin'] = checkArray(dataValueTemp[2], np.min)
+    dataMap['$s3Tmax'] = checkArray(dataValueTemp[2], np.max)
+    dataMap['$s3Tavg'] = checkArray(dataValueTemp[2], np.mean)
+    dataMap['$s3Tstd'] = checkArray(dataValueTemp[2], np.std)
+    dataMap['$s3VentON'] = checkArray(dataValueVent[2], np.mean)
+    dataMap['$s3ComprON'] = checkArray(dataValueComp[2], np.mean)
+    dataMap['$s3Tcv'] = ratio(dataMap['$s3ComprON'], dataMap['$s3VentON'])
+    dataMap['$s4Tmin'] = checkArray(dataValueTemp[3], np.min)
+    dataMap['$s4Tmax'] = checkArray(dataValueTemp[3], np.max)
+    dataMap['$s4Tavg'] = checkArray(dataValueTemp[3], np.mean)
+    dataMap['$s4Tstd'] = checkArray(dataValueTemp[3], np.std)
+    dataMap['$s4VentON'] = checkArray(dataValueVent[3], np.mean)
+    dataMap['$s4ComprON'] = checkArray(dataValueComp[3], np.mean)
+    dataMap['$s4Tcv'] = ratio(dataMap['$s4ComprON'], dataMap['$s4VentON'])
+    tmpdateStr = reportDate.isoformat()
+    yymm = tmpdateStr[2:4] + tmpdateStr[5:7]
+
+    # Definindo o gerenciador do repositório
+    epmConn = getFirstFromODict(session.connections)
+    epResourceManager = epmConn.getProcessorResourcesManager()
+    imgTmpFolder = epResourceManager.getResource(u'mspfiles/images/temp')
+
+    # Criando os gráficos
+    #  *** Boxplot ***
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7, 4), dpi=300)
+    axes.boxplot(dataValueTemp, labels=rooms)
+    if _USEREPOSITORY:
+        bufBoxplot = io.BytesIO()
+        fig.savefig(bufBoxplot, format='png')
+        bufBoxplot.seek(0)
+        resource = imgTmpFolder.upload('figBoxplot.png', bufBoxplot, 'Resource enviada pelo processor',
+                                       mimetypes.types_map['.png'], overrideFile=True)
+    else:
+        fig.savefig(filesPath + '\\figBoxplot.png')
+
+    # *** Barchart ***
+    fig2, axes2 = plt.subplots(nrows=1, ncols=1, figsize=(7, 4), dpi=300)
+    absTimeCompON = [dataValueComp[0].mean(), dataValueComp[1].mean(), dataValueComp[2].mean(),
+                     dataValueComp[3].mean()]
+    axes2.bar(range(len(absTimeCompON)), absTimeCompON, align='center')
+    plt.ylabel('minutos')
+    plt.xticks(range(len(absTimeCompON)), rooms)
+    if _USEREPOSITORY:
+        bufCompOnPercent = io.BytesIO()
+        fig2.savefig(bufCompOnPercent, format='png')
+        bufCompOnPercent.seek(0)
+        resource = imgTmpFolder.upload('figCompOnPercent.png', bufCompOnPercent, 'Resource enviada pelo processor',
+                                       mimetypes.types_map['.png'], overrideFile=True)
+    else:
+        fig2.savefig(filesPath + '\\figCompOnPercent.png')
+    # *** Barchart MinMax ***
+    fig3, axes3 = plt.subplots(nrows=1, ncols=1, figsize=(7, 4), dpi=300)
+    tempsMin= [dataValueTemp[0].min(), dataValueTemp[1].min(), dataValueTemp[2].min(), dataValueTemp[3].min()]
+    tempsMax = [dataValueTemp[0].max(), dataValueTemp[1].max(), dataValueTemp[2].max(),dataValueTemp[3].max()]
+    pos = np.arange(len(tempsMin))
+    barWidth = 0.35
+    axes3.bar(pos - barWidth/2, tempsMin, barWidth, color='SkyBlue', label='MIN')
+    axes3.bar(pos + barWidth/2, tempsMax, barWidth, color='IndianRed', label='MAX')
+    plt.ylabel('Temperatura (°C)')
+    plt.xticks(range(len(tempsMin)), rooms)
+    if _USEREPOSITORY:
+        bufMinMax= io.BytesIO()
+        fig3.savefig(bufMinMax, format='png')
+        bufMinMax.seek(0)
+        resource = imgTmpFolder.upload('figMaxMinAC.png', bufMinMax, 'Resource enviada pelo processor',
+                                       mimetypes.types_map['.png'], overrideFile=True)
+        generatePdfReportRepository(session, dataMap, floor[-2:], rooms, yymm, filesPath, fileName)
+    else:
+        fig2.savefig(filesPath + '\\figMaxMinAC.png')
+        generatePdfReport(dataMap, floor[-2:], rooms, yymm, filesPath, fileName)
+
     return epr.ScopeResult(True)
 
 #### ***** </Módulos para o EPM Processor> *****
@@ -389,6 +704,141 @@ def printOutput4Debug(msg):
 
 def getFirstFromODict(od):
     return next(iter(od.values())) if isinstance(od, OrderedDict) or isinstance(od, dict) else None
+
+def getEPMConnection(connectionsMap, epmWebserver):
+    for k, v in connectionsMap.items():
+        if k == epmWebserver:
+            return v
+    else:
+        return None
+
+def getEncodedImageFromRepository(epResourceManager, fileImageName):
+    #\TODO: fazer tratamento de exceções no caso de não achar as imagens!
+    imageResource = epResourceManager.getResource(fileImageName)
+    imageIO = imageResource.download(epm.DownloadType.Binary)
+    imageIO.seek(0)
+    figEncoded = base64.b64encode(imageIO.read())
+    return figEncoded
+
+def exactMatch(str1, str2):
+    res = re.findall('\\b'+str2+'\\b', str1, flags=re.IGNORECASE)
+    if len(res) > 0:
+        return True
+    else:
+        return False
+
+def generatePdfReport(dataMap, floor, rooms, yymm, filesPath, fileName):
+    vars = ['$andar', '$reportDate', '$sala1', '$sala2', '$sala3', '$sala4',
+            '$s1Tmin', '$s1Tmax', '$s1Tavg', '$s1Tstd', '$s1VentON', '$s1ComprON',
+            '$s2Tmin', '$s2Tmax', '$s2Tavg', '$s2Tstd', '$s2VentON', '$s2ComprON',
+            '$s3Tmin', '$s3Tmax', '$s3Tavg', '$s3Tstd', '$s3VentON', '$s3ComprON',
+            '$s4Tmin', '$s4Tmax', '$s4Tavg', '$s4Tstd', '$s4VentON', '$s4ComprON']
+    pdfFileName = fileName.replace('NN', floor)
+    pdfFileName = pdfFileName.replace('YYMM', yymm)
+    pdfFileName = pdfFileName.replace('_template.html', '.pdf')
+    # </Preparando nome do arquivo PDF>
+    path_wkthmltopdf = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
+    options = {
+        'quiet': '',
+        'page-size': 'A4',
+        'margin-top': '1.5cm',
+        'margin-right': '1.5cm',
+        'margin-bottom': '1.5cm',
+        'margin-left': '1.5cm',
+        'encoding': "UTF-8"
+        }
+    config = pdfkit.configuration(wkhtmltopdf=path_wkthmltopdf)
+    reportPath = filesPath + '\\pdfReports'
+    reportDate = yymm
+    f = open(filesPath + '\\' + fileName, 'r')
+    fileData = f.read()
+    f.close()
+    newdata = fileData.replace(vars[0], floor)
+    newdata = newdata.replace(vars[1], reportDate)
+    for i in range(6, len(vars)):
+        newdata = newdata.replace(vars[i], str(dataMap[vars[i]]))
+    for i in range(4):
+        newdata = newdata.replace(vars[2:6][i], rooms[i])
+    f = open(reportPath+'\\tmpRelatorioMensal.html', 'w')
+    f.write(newdata)
+    f.close()
+    shutil.copy(filesPath +'\\bannerEPM.png', reportPath+'\\bannerEPM.png')
+    shutil.copy(filesPath +'\\figBoxplot.png', reportPath+'\\figBoxplot.png')
+    shutil.copy(filesPath +'\\figCompOnPercent.png', reportPath+'\\figCompOnPercent.png')
+    pdfkit.from_url(reportPath+'\\tmpRelatorioMensal.html', reportPath+'\\' + pdfFileName, configuration=config)
+    # Removendo arquivos temporários
+    os.remove(reportPath+'\\tmpRelatorioMensal.html')
+    os.remove(reportPath+'\\bannerEPM.png')
+    os.remove(reportPath+'\\figBoxplot.png')
+    os.remove(reportPath+'\\figCompOnPercent.png')
+
+def generatePdfReportRepository(session, dataMap, floor, rooms, yymm, filesPath, fileName):
+    epmConn = getEPMConnection(session.connections, 'dili')
+    epResourceManager = epmConn.getProcessorResourcesManager()
+    figBannerEncoded = getEncodedImageFromRepository(epResourceManager,
+                                                     fileImageName=u'mspfiles/images/bannerEPM.png')
+    figBoxPlotEncoded = getEncodedImageFromRepository(epResourceManager,
+                                                      fileImageName=u'mspfiles/images/temp/figBoxplot.png')
+    figCompPercentEncoded = getEncodedImageFromRepository(epResourceManager,
+                                                          fileImageName=u'mspfiles/images/temp/figCompOnPercent.png')
+    figMinMaxEncoded = getEncodedImageFromRepository(epResourceManager,
+                                                     fileImageName=u'mspfiles/images/temp/figMaxMinAC.png')
+
+    vars = ['$andar', '$reportDate', '$sala1', '$sala2', '$sala3', '$sala4',
+            '$s1Tmin', '$s1Tmax', '$s1Tavg', '$s1Tstd', '$s1VentON', '$s1ComprON', '$s1Tcv',
+            '$s2Tmin', '$s2Tmax', '$s2Tavg', '$s2Tstd', '$s2VentON', '$s2ComprON', '$s2Tcv',
+            '$s3Tmin', '$s3Tmax', '$s3Tavg', '$s3Tstd', '$s3VentON', '$s3ComprON', '$s3Tcv',
+            '$s4Tmin', '$s4Tmax', '$s4Tavg', '$s4Tstd', '$s4VentON', '$s4ComprON', '$s4Tcv']
+    pdfFileName = fileName.replace('NN', floor)
+    pdfFileName = pdfFileName.replace('YYMM', yymm)
+    if _USEREPOSITORY:
+        pdfFileName = pdfFileName.replace('_templateRepo.html', '.pdf')
+    else:
+        pdfFileName = pdfFileName.replace('_template.html', '.pdf')
+    # </Preparando nome do arquivo PDF>
+    path_wkthmltopdf = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
+    options = {
+        'quiet': '',
+        'page-size': 'A4',
+        'margin-top': '1.5cm',
+        'margin-right': '1.5cm',
+        'margin-bottom': '1.5cm',
+        'margin-left': '1.5cm',
+        'encoding': "UTF-8"
+        }
+    config = pdfkit.configuration(wkhtmltopdf=path_wkthmltopdf)
+    reportPath = epResourceManager.getResource(u'mspfiles/reports')
+    if session.scopeContext == epr.ScopeContext.Test:
+        reportPath = epResourceManager.getResource(u'mspfiles/reports/temp')
+    elif session.scopeContext == epr.ScopeContext.Simulation:
+        reportPath = epResourceManager.getResource(u'mspfiles/reports/simulated')
+    reportDate = yymm
+    # Carrega o HTML template do repositório
+    htmlTemplateResource = epResourceManager.getResource(u'mspfiles/reports/templates/NNthFloorReport_YYMM_templateRepo.html')
+    fileData = htmlTemplateResource.download(epm.DownloadType.Text)
+    # Substituindo as variáveis do template pelos valores
+    newdata = fileData.replace(vars[0], floor)
+    newdata = newdata.replace(vars[1], reportDate)
+    for i in range(6, len(vars)):
+        newdata = newdata.replace(vars[i], str(dataMap[vars[i]]))
+    for i in range(4):
+        newdata = newdata.replace(vars[2:6][i], rooms[i])
+    # <Adicionando as imagens>
+    newdata = newdata.replace('bannerEPM.png', figBannerEncoded.decode('utf-8'))
+    newdata = newdata.replace('figBoxplot.png', figBoxPlotEncoded.decode('utf-8'))
+    newdata = newdata.replace('figCompOnPercent.png', figCompPercentEncoded.decode('utf-8'))
+    newdata = newdata.replace('figMaxMinAC.png', figMinMaxEncoded.decode('utf-8'))
+
+    pdfFile = pdfkit.from_string(input=newdata, output_path=False, configuration=config, options=options)
+    resource = reportPath.upload(pdfFileName, io.BytesIO(pdfFile),
+                                 'Relatório PDF enviado pelo processor.',
+                                 mimetypes.types_map['.pdf'], overrideFile=True)
+
+    # Deletando as imagens temporariamente criadas
+    epResourceManager.getResource(u'mspfiles/images/temp/figBoxplot.png').delete()
+    epResourceManager.getResource(u'mspfiles/images/temp/figCompOnPercent.png').delete()
+    epResourceManager.getResource(u'mspfiles/images/temp/figMaxMinAC.png').delete()
+
 
 #### ***** </Funções/Classes utilizadas pelos módulos> *****
 
@@ -442,9 +892,103 @@ def mainmspRobustLinearRegression(connections):
     r = mspRobustLinearRegression(session, bv, bvPred)
     return r.succeeded
 
+def mainPdfReport(connections):
+    print('Iniciando o main...')
+    # *** Definindo o objeto SESSION ***
+    eventTime = datetime.datetime(2017, 10, 15, tzinfo=pytz.UTC)
+    notUsed = datetime.timedelta(minutes=60*24)
+    parametersMap = {}
+    userCache = {}
+    lastExecutedInfo = None
+    scopeResult = epr.ScopeContext.Test
+    session = epr.ScopeSession(timeEvent=eventTime, range=notUsed, processInterval=notUsed,
+                               parametersMap=parametersMap, userCache=userCache, lastExecutedInfo=lastExecutedInfo,
+                               connectionsMap=connections, scopeContext=scopeResult)
+
+    # *** Definindo demais parâmetros ***
+    # Mapeamento das salas dos sites da Elipse
+    roomPrettyName={('[Elipse-RS]', 'Floor10', 'Room1'): 'ADM',
+                    ('[Elipse-RS]', 'Floor10', 'Room2'): 'TI',
+                    ('[Elipse-RS]', 'Floor10', 'Room3'): 'Meeting10th',
+                    ('[Elipse-RS]', 'Floor10', 'Room4'): 'EPM',
+                    ('[Elipse-RS]', 'Floor11', 'Room1'): 'Power',
+                    ('[Elipse-RS]', 'Floor11', 'Room2'): 'Servers',
+                    ('[Elipse-RS]', 'Floor11', 'Room3'): 'Meeting11th',
+                    ('[Elipse-RS]', 'Floor11', 'Room4'): 'E3',
+                    ('[Elipse-RS]', 'Floor12', 'Room1'): 'Auditorium',
+                    ('[Elipse-RS]', 'Floor12', 'Room2'): 'Training',
+                    ('[Elipse-RS]', 'Floor12', 'Room3'): 'Meeting12th',
+                    ('[Elipse-RS]', 'Floor12', 'Room4'): 'Dev-12'}
+
+    # Função para criar a lista com os objetos do EPM para utilização no relatório
+    def makeBVList(floor='', elipseSite=None, basePath=None, connection=None, roomPrettyName=roomPrettyName):
+        rooms=['']*4
+        if len(floor) > 0:
+            mapBVList = OrderedDict({'$Temp':[0]*4, '$VentON':[0]*4, '$Compr':[0]*4})
+            itTemp, itAComp, itACVent = (0,0,0)
+            floorStr = '/' + floor
+            floorPath = basePath + elipseSite + floorStr
+            floorObjs = connection.getObjects([floorPath])
+            def roomPath2IdxOrder(strPath):
+                return int(strPath[strPath.find('Room')+4:strPath.find('Room')+5])
+            # Navegando na estrutura de dados do andar
+            roomsObj = list(floorObjs.values())[0]
+            for roomsList in roomsObj.enumObjects().values():
+                print('*SALA: ' + roomsList.path)
+                idxOrder = roomPath2IdxOrder(roomsList.path) - 1
+                rooms[idxOrder] = roomPrettyName[elipseSite, floor, roomsList.name]
+                for room in roomsList.enumObjects().values():
+                    print('------>' + room.path)
+                    if room.type == 'Temperature':
+                        for itemProperty in room.enumProperties().values():
+                            if exactMatch(itemProperty.name, 'Measurement'):
+                                print(itemProperty.name)
+                                mapBVList['$Temp'][idxOrder]= itemProperty
+                    elif room.type == 'AirConditioner':
+                        for itemProperty in room.enumProperties().values():
+                            if exactMatch(itemProperty.name, 'Compressor'):
+                                print(itemProperty.name)
+                                mapBVList['$Compr'][idxOrder] = itemProperty
+                            elif exactMatch(itemProperty.name, 'Ventilation'):
+                                print(itemProperty.name)
+                                mapBVList['$VentON'][idxOrder] = itemProperty
+        else:
+            rooms=['ADM', 'TI', 'Meeting10th', 'EPM']
+            mapBVList = {'$Temp':[getFirstFromODict(connection.getBasicVariables(['ADM_Temperature'])),
+                                  getFirstFromODict(connection.getBasicVariables(['TI_Temperature'])),
+                                  getFirstFromODict(connection.getBasicVariables(['MeetingRoom10th_Temperature'])),
+                                  getFirstFromODict(connection.getBasicVariables(['EPMDev_Temperature']))],
+                         '$VentON':[getFirstFromODict(connection.getBasicVariables(['ADM_ACVent'])),
+                                    None,
+                                    getFirstFromODict(connection.getBasicVariables(['MeetingRoom10th_ACVent'])),
+                                    getFirstFromODict(connection.getBasicVariables(['EPM_ACVent']))],
+                         '$Compr':[getFirstFromODict(connection.getBasicVariables(['ADM_ACCompr'])),
+                                   None,
+                                   getFirstFromODict(connection.getBasicVariables(['MeetingRoom10th_ACCompr'])),
+                                   getFirstFromODict(connection.getBasicVariables(['EPM_ACCompr']))]}
+        return mapBVList, rooms, floorObjs
+    # <Parâmetros>
+    connection = getFirstFromODict(connections)
+    elipseSite = '[Elipse-RS]'
+    floor ='Floor10'
+    basePath = '/Models/ElipseDataModel/DataModel/Elipse/'
+    if _USEREPOSITORY:
+        filesPath = 'mspfiles/reports'
+        fileName = 'NNthFloorReport_YYMM_templateRepo.html'
+    else:
+        filesPath = r'F:\GDrive\Projects\EPMProcessorMinitreinamento\htmlTemplate'
+        fileName = 'NNthFloorReport_YYMM_template.html'
+    timeZone = 'Brazil/East'
+    # </Parâmetros>
+    mapBVList, rooms, floorObjs = makeBVList(floor, elipseSite, basePath, connection)
+
+    # *** Chamando o método para testar ***
+    r = mspFloorPdfReport(session, floorObjs, floor, filesPath=filesPath, fileName=fileName, timeZone=timeZone)
+    return r.succeeded
+
 
 if __name__ == '__main__':
-    print('Iniciando a depuração...')
+    print('Iniciando os testes...')
     connection = epm.EpmConnection('http://epm_processor_machine:44333',
                                    'http://epm_processor_machine:44332',
                                    'epm_user',
@@ -453,7 +997,8 @@ if __name__ == '__main__':
 
     # Descomentar a linha de interesse para Debug
     #sys.exit(int(not mainDailyACPowerCost(connections)) or 0)
-    sys.exit(int(not mainmspRobustLinearRegression(connections)) or 0)
+    #sys.exit(int(not mainmspRobustLinearRegression(connections)) or 0)
+    sys.exit(int(not mainPdfReport(connections)) or 0)
 
 
 #### ***** </MAIN para testes locais> *****
