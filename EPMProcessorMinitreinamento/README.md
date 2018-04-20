@@ -11,11 +11,13 @@ Exemplo de como proceder com a leitura de dados históricos (base diária) do perí
 Exemplo que demonstra como proceder com uma consulta histórica interpolada do valor da temperatura de uma sala da última hora e utilizar estes dados para predizer o valor desta temperatura meia hora à frente utilizando um método de regressão linear robusta.
 
 
-## Exemplo 3 - função para geração mensal de relatórios em PDF a partir de um template em HTML. Os relatórios são gerados
-por andar (objeto Floor), onde cada andar tem 4 salas e cada sala tem um ar-condicionado.
+## Exemplo 3 - função para geração mensal de relatórios em PDF a partir de um template em HTML.
+
+Os relatórios são gerados por andar (objeto Floor), onde cada andar tem 4 salas e cada sala tem um ar-condicionado.
 
 
 ## Exemplo 4 - documentação
+
 Exemplo de como documentar o código para geração automática de documentação em html utilizando o sphinx.
 
 
